@@ -60,6 +60,22 @@ int main() {
                         printf("%zu -> %s\n", i, file->name);
                     }
                 }
+            } else if (strncmp(line, "lsfree", 6) == 0) {
+                puts("Free node indices\n");
+                NodeOffset empty_node = mapper->root->first_free_node;
+                while (empty_node != NULL_OFF) {
+                    EmptyNode* node = (EmptyNode*)OUT_OFFSET(mapper->root, empty_node);
+                    printf("\tnode %zu\n", empty_node);
+                    empty_node = node->next_node;
+                }
+
+                puts("Free block indices\n");
+                BlockOffset empty_block = mapper->root->first_free_block;
+                while (empty_block != NULL_OFF) {
+                    EmptyBlock* block = (EmptyBlock*)OUT_OFFSET(mapper->root, empty_block);
+                    printf("\tblock %zu\n", empty_block);
+                    empty_block = block->next_block;
+                }
             } else if (strncmp(line, "ls", 2) == 0) {
                 ls(mapper, cwd);
             } else if (strncmp(line, "cd", 2) == 0) {
@@ -170,6 +186,22 @@ int main() {
                     continue;
                 }
                 seek_file(mapper, fd, offset, flag);
+            } else if (strncmp(line, "rm", 2) == 0) {
+                char path[256];
+                if (sscanf(line, "rm %s", path) != 1) {
+                    puts("invalid rm usage");
+                    continue;
+                }
+                NodeOffset node = traverse_path(mapper, cwd, path);
+                if (node == NULL_OFF) {
+                    printf("node %s doesn't exist", path);
+                    continue;
+                }
+                if (delete_child(mapper, node) == 1) {
+                    printf("deleted file %s\n", path);
+                } else {
+                    printf("couldn't delete file %s\n", path);
+                }
             } else if (strncmp(line, "exit", 4) == 0) {
                 return 0;
             } else {

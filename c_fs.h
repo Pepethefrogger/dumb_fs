@@ -244,6 +244,52 @@ NodeOffset get_node(Mapper* mapper) {
     return MAP_OFFSET(mapper->root, &first->node.nodes[first->node.node_count - 1]);
 }
 
+void delete_block(Mapper* mapper, Block* block) {
+    EmptyBlock* new_first_free = (EmptyBlock*)block;
+    BlockOffset old_first_free = mapper->root->first_free_block;
+    mapper->root->first_free_block = MAP_OFFSET(mapper->root, new_first_free);
+    new_first_free->next_block = old_first_free;
+}
+
+void delete_file_node_content(Mapper* mapper, Node* node) {
+    BlockOffset b = node->node.file.first_block;
+    while (b != NULL_OFF) {
+        Block* block = (Block*)OUT_OFFSET(mapper->root, b);
+        delete_block(mapper, block);
+        b = block->data.next_block;
+    }
+}
+
+void delete_node(Mapper *mapper, Node *node);
+
+void delete_dir_node_content(Mapper* mapper, Node* node) {
+    NodeOffset c = node->node.dir.first_child;
+    while (c != NULL_OFF) {
+        Node* child = (Node*)OUT_OFFSET(mapper->root, c);
+        delete_node(mapper, child);
+    }
+}
+
+void delete_node(Mapper* mapper, Node* node) {
+    if (node->parent == NULL_OFF) {
+        puts("tried to delete root node");
+        exit(1);
+    }
+    switch (node->type) {
+        case FIL:
+            delete_dir_node_content(mapper, node);
+            break;
+        case DIR:
+            delete_file_node_content(mapper, node);
+        default:
+            return;
+    }
+    EmptyNode* new_first_empty = (EmptyNode*)node;
+    NodeOffset old_first_empty = mapper->root->first_free_node;
+    mapper->root->first_free_node = MAP_OFFSET(mapper->root, new_first_empty);
+    new_first_empty->next_node = old_first_empty;
+}
+
 void close_mapper(Mapper* mapper) {
     if (msync(mapper->root, mapper->file_size, MS_SYNC) == -1) {
         perror("msync");
@@ -289,6 +335,32 @@ NodeOffset create_children(Mapper* mapper, Node* dir, char* name) {
     dir->node.dir.first_child = MAP_OFFSET(mapper->root, new_child);
     new_child->next_sibling = first_child;
     return nc;
+}
+
+int delete_child(Mapper* mapper, NodeOffset n) {
+    Node* child = (Node*)OUT_OFFSET(mapper->root, n);
+    NodeOffset p = child->parent;
+    Node* parent = (Node*)OUT_OFFSET(mapper->root, p);
+    if (parent->node.dir.first_child == n) {
+        parent->node.dir.first_child = NULL_OFF;
+        delete_node(mapper, child);
+        return 1;
+    }
+
+    DirIterator iter = create_iterator(mapper, MAP_OFFSET(mapper->root, parent));
+
+    NodeOffset next = child->next_sibling;
+
+    NodeOffset s;
+    while (s = iter_next(&iter), s != NULL_OFF) {
+        Node* search = (Node*)OUT_OFFSET(mapper->root, s);
+        if (search->next_sibling == n) {
+            search->next_sibling = next;
+            delete_node(mapper, child);
+            return 1;
+        }
+    }
+    return -1;
 }
 
 void create_dir(Mapper* mapper, NodeOffset d, char* name) {

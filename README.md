@@ -10,6 +10,8 @@ ls
 mkdir dirname
 touch filename
 cd path
+rm filename
+lsfree
 open filename
 write fd data
 read fd length
